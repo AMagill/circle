@@ -127,12 +127,12 @@ void main() {
     circleMat.rotateY(time / 11000.0);
     Matrix4 invCircleMat = new Matrix4.copy(circleMat)..invert();
     
-    isIn(double x, double y) {
+    Vector3 unproject(double x, double y) {
       var dist = new Vector3(x, y, 0.0).dot(circleMat.forward) /
                  new Vector3(0.0, 0.0, 1.0).dot(circleMat.forward);
       var pt = new Vector4(x, y, dist, 1.0);
       Vector4 unproj = invCircleMat * pt;
-      return unproj.xyz.length2 < 1.0;
+      return unproj.xyz;
     }
     
     subDiv(double l, double r, double b, double t, int n, int minn) { 
@@ -151,19 +151,44 @@ void main() {
       }
       
       if (minn <= 0) {
-        int nIn = 0;
-        if (isIn(b, l)) nIn++;
-        if (isIn(b, r)) nIn++;
-        if (isIn(t, l)) nIn++;
-        if (isIn(t, r)) nIn++;
+        var corners = new List<Vector3>();
+        corners.add(unproject(b, l));
+        corners.add(unproject(b, r));
+        corners.add(unproject(t, l));
+        corners.add(unproject(t, r));
+
+        // If some but not all corners are inside, this square needs subdivision
+        int nIn = corners.fold(0, (count, elem) => count + ((elem.length2 <= 1.0)?1:0));
+        
+        bool edgeIntersect = false;
         if (nIn == 0) {
-          addQuad(0.0);
-          return;
+          // If any of the edges cross the circle (twice), this square needs subdivision.
+          checkEdge(Vector3 pt1, Vector3 pt2) {
+            // distance(x=a+tn, [0,0]) = ||a - (a.n)n||
+            var n = pt2-pt1;
+            var segL = n.length;
+            n /= segL;  // Normalize
+            var back = pt1.dot(n);
+            var dist = (pt1 - n * back).length2;
+            
+            return (dist < 1.0) && (back <= 0.0) && (-back <= segL);
+          }
+          if (checkEdge(corners[0], corners[1]) ||
+              checkEdge(corners[1], corners[2]) ||
+              checkEdge(corners[2], corners[3]) ||
+              checkEdge(corners[3], corners[0])) {
+            edgeIntersect = true;
+          } else {
+            addQuad(0.0);
+            return;
+          }
         }
+        
         if (nIn == 4) {
           addQuad(2.0);
           return;
         }
+        
       }
       
       double mx = (l + r) / 2.0;
